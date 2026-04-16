@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>StockIQ — Real-Time Sentiment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#04080f;
+  --bg1:#080e1a;
+  --bg2:#0c1525;
+  --bg3:#111e35;
+  --border:rgba(0,255,136,0.08);
+  --border2:rgba(0,255,136,0.18);
+  --green:#00ff88;
+  --green2:#00cc6a;
+  --red:#ff3b5c;
+  --amber:#ffb800;
+  --blue:#00aaff;
+  --text:#c8d8e8;
+  --text2:#7a9bb5;
+  --text3:#3d5a72;
+  --font:'IBM Plex Sans',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+html{scroll-behavior:smooth;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+/* scanline effect */
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:1000;}
+
+/* ── TOPBAR ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;background:var(--bg1);border-bottom:1px solid var(--border2);position:sticky;top:0;z-index:100;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-text{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--green);letter-spacing:2px;}
+.logo-sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;}
+.topbar-center{display:flex;align-items:center;gap:16px;}
+.ticker-pill{font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:3px;border:1px solid var(--border2);color:var(--text2);cursor:pointer;transition:all 0.15s;}
+.ticker-pill:hover,.ticker-pill.active{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.06);}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+.live-badge{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--green);}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-g 1.5s infinite;}
+@keyframes pulse-g{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,255,136,0.4);}50%{opacity:0.7;box-shadow:0 0 0 4px rgba(0,255,136,0);}}
+.clock{font-family:var(--mono);font-size:12px;color:var(--text3);}
+
+/* ── MAIN LAYOUT ── */
+.main{display:grid;grid-template-columns:280px 1fr 300px;gap:0;height:calc(100vh - 48px);}
+
+/* ── PANELS ── */
+.panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.panel:last-child{border-right:none;border-left:1px solid var(--border);}
+.panel-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.panel-title{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em;}
+.panel-body{flex:1;overflow-y:auto;padding:12px 16px;}
+.panel-body::-webkit-scrollbar{width:3px;}
+.panel-body::-webkit-scrollbar-thumb{background:var(--border2);}
+
+/* ── TICKER LIST ── */
+.ticker-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:6px;cursor:pointer;transition:all 0.15s;margin-bottom:4px;border:1px solid transparent;}
+.ticker-row:hover{background:var(--bg2);border-color:var(--border);}
+.ticker-row.selected{background:rgba(0,255,136,0.05);border-color:rgba(0,255,136,0.2);}
+.ticker-symbol{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);min-width:50px;}
+.ticker-score-bar{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+.ticker-score-fill{height:100%;border-radius:2px;transition:width 0.8s ease;}
+.ticker-label{font-family:var(--mono);font-size:10px;min-width:52px;text-align:right;}
+.bullish{color:var(--green);}
+.bearish{color:var(--red);}
+.neutral{color:var(--amber);}
+
+/* ── MAIN CHART AREA ── */
+.chart-section{padding:16px 20px;border-bottom:1px solid var(--border);}
+.selected-ticker-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;}
+.selected-name{font-family:var(--mono);font-size:24px;font-weight:600;color:var(--green);}
+.selected-price{font-family:var(--mono);font-size:20px;font-weight:500;}
+.selected-change{font-family:var(--mono);font-size:13px;margin-top:2px;}
+.score-display{text-align:right;}
+.score-big{font-family:var(--mono);font-size:36px;font-weight:600;line-height:1;}
+.score-label{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:4px;}
+.chart-container{height:180px;position:relative;}
+
+/* ── STATS ROW ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 20px;border-bottom:1px solid var(--border);}
+.stat{background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:10px 12px;}
+.stat-val{font-family:var(--mono);font-size:18px;font-weight:600;}
+.stat-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;}
+
+/* ── NEWS FEED ── */
+.news-item{padding:10px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg1);margin-bottom:8px;animation:slide-in 0.3s ease;}
+@keyframes slide-in{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
+.news-source{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;}
+.news-text{font-size:12px;line-height:1.5;color:var(--text2);}
+.news-sentiment{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;margin-top:6px;padding:2px 8px;border-radius:3px;}
+.sent-bull{background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.2);}
+.sent-bear{background:rgba(255,59,92,0.1);color:var(--red);border:1px solid rgba(255,59,92,0.2);}
+.sent-neut{background:rgba(255,184,0,0.1);color:var(--amber);border:1px solid rgba(255,184,0,0.2);}
+
+/* ── RIGHT: SENTIMENT FEED ── */
+.feed-item{padding:10px 12px;border-left:2px solid var(--border2);margin-bottom:10px;animation:slide-in 0.3s ease;}
+.feed-ticker{font-family:var(--mono);font-size:11px;font-weight:600;margin-bottom:3px;}
+.feed-summary{font-size:12px;color:var(--text2);line-height:1.5;}
+.feed-meta{display:flex;align-items:center;gap:8px;margin-top:6px;}
+.feed-score{font-family:var(--mono);font-size:11px;}
+.feed-time{font-family:var(--mono);font-size:10px;color:var(--text3);margin-left:auto;}
+
+/* ── MARKET OVERVIEW BAR ── */
+.market-bar{display:flex;gap:0;border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0;}
+.market-bar::-webkit-scrollbar{display:none;}
+.mbar-item{display:flex;align-items:center;gap:8px;padding:8px 16px;border-right:1px solid var(--border);white-space:nowrap;flex-shrink:0;}
+.mbar-ticker{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text);}
+.mbar-price{font-family:var(--mono);font-size:11px;}
+.mbar-change{font-family:var(--mono);font-size:10px;}
+
+/* ── MINI SPARKLINE ── */
+.sparkline{display:flex;align-items:flex-end;gap:2px;height:24px;}
+.spark-bar{width:3px;border-radius:1px;min-height:2px;transition:height 0.5s ease;}
+
+/* ── HEATMAP ── */
+.heatmap{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}
+.heat-cell{padding:10px 8px;border-radius:6px;text-align:center;cursor:pointer;transition:all 0.2s;border:1px solid transparent;}
+.heat-cell:hover{border-color:var(--border2);}
+.heat-ticker{font-family:var(--mono);font-size:12px;font-weight:600;}
+.heat-score{font-family:var(--mono);font-size:11px;margin-top:2px;}
+
+/* scrollbar */
+*{scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">
+    <div>
+      <div class="logo-text">STOCKIQ</div>
+      <div class="logo-sub">AI SENTIMENT TERMINAL</div>
+    </div>
+  </div>
+  <div class="topbar-center" id="topbarTickers"></div>
+  <div class="topbar-right">
+    <div class="live-badge"><div class="live-dot"></div><span id="liveLabel">CONNECTING</span></div>
+    <div class="clock" id="clock"></div>
+  </div>
+</div>
+
+<!-- MARKET BAR -->
+<div class="market-bar" id="marketBar">
+  <div class="mbar-item" style="color:var(--text3);font-family:var(--mono);font-size:11px;">Loading market data...</div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="main">
+
+  <!-- LEFT: Ticker List -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Watchlist</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text3);" id="updateLabel">--</span>
+    </div>
+    <div class="panel-body">
+      <div class="heatmap" id="heatmap"></div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">Sentiment Ranking</div>
+      <div id="tickerList"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: Chart + News -->
+  <div class="panel" style="border-right:none;">
+    <div class="chart-section">
+      <div class="selected-ticker-header">
+        <div>
+          <div class="selected-name" id="selTicker">AAPL</div>
+          <div class="selected-price" id="selPrice" style="color:var(--text);">$0.00</div>
+          <div class="selected-change" id="selChange">--</div>
+        </div>
+        <div class="score-display">
+          <div class="score-big" id="selScore" style="color:var(--green);">0.50</div>
+          <div class="score-label">SENTIMENT SCORE</div>
+          <div style="font-family:var(--mono);font-size:12px;margin-top:4px;" id="selLabel">NEUTRAL</div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="sentimentChart"></canvas>
+      </div>
+    </div>
+
+    <div class="stats-row" id="statsRow">
+      <div class="stat"><div class="stat-val" id="statMentions">--</div><div class="stat-label">Mentions</div></div>
+      <div class="stat"><div class="stat-val" id="statVolume">--</div><div class="stat-label">Volume</div></div>
+      <div class="stat"><div class="stat-val" id="statConf" style="color:var(--blue)">--</div><div class="stat-label">AI Confidence</div></div>
+      <div class="stat"><div class="stat-val" id="statDataPts">--</div><div class="stat-label">Data Points</div></div>
+    </div>
+
+    <div class="panel-header" style="border-top:none;">
+      <span class="panel-title">News & Reddit Feed</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text3);" id="newsLabel">live</span>
+    </div>
+    <div class="panel-body" id="newsFeed">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--text3);">Waiting for data...</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Live Sentiment Feed -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Live Feed</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--green);">REAL-TIME</span>
+    </div>
+    <div class="panel-body" id="liveFeed">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--text3);">Waiting for signals...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000/ws';
+
+const TICKERS = ["AAPL","TSLA","NVDA","MSFT","GOOGL","AMZN","META","AMD"];
+let selectedTicker = "NVDA";
+let ws = null;
+let tickerHistory = {};
+let latestData = {};
+let sentimentChart = null;
+let feedItems = [];
+
+TICKERS.forEach(t => { tickerHistory[t] = []; });
+
+// ── Clock ─────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Init Chart ────────────────────────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('sentimentChart').getContext('2d');
+  sentimentChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Sentiment',
+          data: [],
+          borderColor: '#00ff88',
+          backgroundColor: 'rgba(0,255,136,0.06)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#00ff88',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'Neutral',
+          data: [],
+          borderColor: 'rgba(255,184,0,0.3)',
+          borderWidth: 1,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: { legend: { display: false }, tooltip: {
+        backgroundColor: '#0c1525',
+        borderColor: 'rgba(0,255,136,0.3)',
+        borderWidth: 1,
+        titleColor: '#00ff88',
+        bodyColor: '#c8d8e8',
+        titleFont: { family: 'IBM Plex Mono', size: 11 },
+        bodyFont: { family: 'IBM Plex Mono', size: 11 },
+        callbacks: {
+          label: ctx => ` Score: ${ctx.parsed.y.toFixed(3)}`,
+        }
+      }},
+      scales: {
+        x: {
+          grid: { color: 'rgba(0,255,136,0.05)' },
+          ticks: { color: '#3d5a72', font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 8 },
+          border: { color: 'rgba(0,255,136,0.1)' },
+        },
+        y: {
+          min: 0, max: 1,
+          grid: { color: 'rgba(0,255,136,0.05)' },
+          ticks: { color: '#3d5a72', font: { family: 'IBM Plex Mono', size: 9 }, stepSize: 0.25 },
+          border: { color: 'rgba(0,255,136,0.1)' },
+        }
+      }
+    }
+  });
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    document.getElementById('liveLabel').textContent = 'LIVE';
+    document.getElementById('liveLabel').style.color = '#00ff88';
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.event === 'ticker_update') handleTickerUpdate(msg.data);
+    else if (msg.event === 'ticker_history') handleHistory(msg.data);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('liveLabel').textContent = 'RECONNECTING';
+    document.getElementById('liveLabel').style.color = '#ffb800';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => {
+    document.getElementById('liveLabel').textContent = 'OFFLINE';
+    document.getElementById('liveLabel').style.color = '#ff3b5c';
+  };
+}
+
+function handleHistory(data) {
+  const { ticker, history } = data;
+  tickerHistory[ticker] = history;
+  if (ticker === selectedTicker) updateChart();
+}
+
+function handleTickerUpdate(data) {
+  const { ticker } = data;
+
+  if (!tickerHistory[ticker]) tickerHistory[ticker] = [];
+  tickerHistory[ticker].push(data);
+  if (tickerHistory[ticker].length > 50) tickerHistory[ticker].shift();
+
+  latestData[ticker] = data;
+
+  // Update UI
+  updateTickerList();
+  updateHeatmap();
+  updateMarketBar();
+
+  if (ticker === selectedTicker) {
+    updateSelectedTicker(data);
+    updateChart();
+    updateNewsFeed(data);
+  }
+
+  addToLiveFeed(data);
+
+  const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+  document.getElementById('updateLabel').textContent = now;
+}
+
+// ── Select Ticker ─────────────────────────────────────────────────────────────
+function selectTicker(ticker) {
+  selectedTicker = ticker;
+  document.querySelectorAll('.ticker-row').forEach(r => r.classList.toggle('selected', r.dataset.ticker === ticker));
+  document.querySelectorAll('.ticker-pill').forEach(p => p.classList.toggle('active', p.dataset.ticker === ticker));
+
+  if (latestData[ticker]) {
+    updateSelectedTicker(latestData[ticker]);
+    updateNewsFeed(latestData[ticker]);
+  }
+  updateChart();
+}
+
+function updateSelectedTicker(data) {
+  const s = data.sentiment;
+  const color = s.score > 0.6 ? '#00ff88' : s.score < 0.4 ? '#ff3b5c' : '#ffb800';
+
+  document.getElementById('selTicker').textContent = data.ticker;
+  document.getElementById('selPrice').textContent = `$${data.price.toFixed(2)}`;
+
+  const chg = data.price_change;
+  const chgEl = document.getElementById('selChange');
+  chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+  chgEl.style.color = chg >= 0 ? '#00ff88' : '#ff3b5c';
+
+  document.getElementById('selScore').textContent = s.score.toFixed(3);
+  document.getElementById('selScore').style.color = color;
+  document.getElementById('selLabel').textContent = s.label.toUpperCase();
+  document.getElementById('selLabel').style.color = color;
+
+  document.getElementById('statMentions').textContent = data.mentions;
+  document.getElementById('statVolume').textContent = (data.volume / 1e6).toFixed(1) + 'M';
+  document.getElementById('statConf').textContent = Math.round(s.confidence * 100) + '%';
+  document.getElementById('statDataPts').textContent = (tickerHistory[data.ticker] || []).length;
+}
+
+function updateChart() {
+  const history = tickerHistory[selectedTicker] || [];
+  if (!history.length) return;
+
+  const labels = history.map(d => {
+    const t = new Date(d.timestamp);
+    return t.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  });
+  const scores = history.map(d => d.sentiment.score);
+  const neutral = history.map(() => 0.5);
+
+  sentimentChart.data.labels = labels;
+  sentimentChart.data.datasets[0].data = scores;
+  sentimentChart.data.datasets[1].data = neutral;
+
+  const latest = scores[scores.length - 1] || 0.5;
+  const color = latest > 0.6 ? '#00ff88' : latest < 0.4 ? '#ff3b5c' : '#ffb800';
+  sentimentChart.data.datasets[0].borderColor = color;
+  sentimentChart.data.datasets[0].backgroundColor = color + '10';
+  sentimentChart.data.datasets[0].pointBackgroundColor = color;
+
+  sentimentChart.update('none');
+}
+
+// ── Ticker List ───────────────────────────────────────────────────────────────
+function updateTickerList() {
+  const sorted = [...TICKERS].sort((a, b) => {
+    const sa = latestData[a]?.sentiment.score || 0.5;
+    const sb = latestData[b]?.sentiment.score || 0.5;
+    return sb - sa;
+  });
+
+  const list = document.getElementById('tickerList');
+  list.innerHTML = sorted.map(ticker => {
+    const d = latestData[ticker];
+    const score = d?.sentiment.score || 0.5;
+    const label = d?.sentiment.label || 'Neutral';
+    const color = score > 0.6 ? '#00ff88' : score < 0.4 ? '#ff3b5c' : '#ffb800';
+    const pct = Math.round(score * 100);
+    const chg = d?.price_change || 0;
+
+    return `
+      <div class="ticker-row ${ticker === selectedTicker ? 'selected' : ''}" data-ticker="${ticker}" onclick="selectTicker('${ticker}')">
+        <span class="ticker-symbol">${ticker}</span>
+        <div class="ticker-score-bar">
+          <div class="ticker-score-fill" style="width:${pct}%;background:${color};"></div>
+        </div>
+        <span class="ticker-label" style="color:${color};">${label}</span>
+        <span style="font-family:var(--mono);font-size:10px;color:${chg>=0?'#00ff88':'#ff3b5c'};min-width:40px;text-align:right;">${chg>=0?'+':''}${chg.toFixed(1)}%</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+function updateHeatmap() {
+  const hm = document.getElementById('heatmap');
+  hm.innerHTML = TICKERS.map(ticker => {
+    const d = latestData[ticker];
+    const score = d?.sentiment.score || 0.5;
+    const color = score > 0.65 ? 'rgba(0,255,136,0.15)' : score > 0.55 ? 'rgba(0,255,136,0.07)' :
+                  score < 0.35 ? 'rgba(255,59,92,0.2)' : score < 0.45 ? 'rgba(255,59,92,0.08)' : 'rgba(255,184,0,0.08)';
+    const textColor = score > 0.55 ? '#00ff88' : score < 0.45 ? '#ff3b5c' : '#ffb800';
+    return `
+      <div class="heat-cell" style="background:${color};" onclick="selectTicker('${ticker}')">
+        <div class="heat-ticker" style="color:${textColor}">${ticker}</div>
+        <div class="heat-score" style="color:${textColor}">${score.toFixed(2)}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── Market Bar ────────────────────────────────────────────────────────────────
+function updateMarketBar() {
+  const bar = document.getElementById('marketBar');
+  bar.innerHTML = TICKERS.map(ticker => {
+    const d = latestData[ticker];
+    const price = d?.price || 0;
+    const chg = d?.price_change || 0;
+    const color = chg >= 0 ? '#00ff88' : '#ff3b5c';
+    const history = tickerHistory[ticker] || [];
+    const sparkBars = history.slice(-8).map(h => {
+      const s = h.sentiment.score;
+      const sc = s > 0.6 ? '#00ff88' : s < 0.4 ? '#ff3b5c' : '#ffb800';
+      const ht = Math.round(s * 20) + 4;
+      return `<div class="spark-bar" style="height:${ht}px;background:${sc};"></div>`;
+    }).join('');
+    return `
+      <div class="mbar-item" onclick="selectTicker('${ticker}')" style="cursor:pointer;">
+        <span class="mbar-ticker">${ticker}</span>
+        <span class="mbar-price" style="color:${color}">$${price.toFixed(0)}</span>
+        <span class="mbar-change" style="color:${color}">${chg>=0?'+':''}${chg.toFixed(1)}%</span>
+        <div class="sparkline">${sparkBars}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── News Feed ─────────────────────────────────────────────────────────────────
+function updateNewsFeed(data) {
+  const feed = document.getElementById('newsFeed');
+  document.getElementById('newsLabel').textContent = data.ticker;
+
+  const headlines = (data.headlines || []).map(h => ({text: h, source: 'NEWS', type: 'news'}));
+  const posts = (data.reddit_posts || []).map(p => ({text: p, source: 'REDDIT', type: 'reddit'}));
+  const all = [...headlines, ...posts];
+
+  const score = data.sentiment.score;
+  const sentClass = score > 0.6 ? 'sent-bull' : score < 0.4 ? 'sent-bear' : 'sent-neut';
+  const sentText = score > 0.6 ? '▲ BULLISH' : score < 0.4 ? '▼ BEARISH' : '◆ NEUTRAL';
+  const sourceColor = {'NEWS': '#00aaff', 'REDDIT': '#ff6314'};
+
+  feed.innerHTML = all.map(item => `
+    <div class="news-item">
+      <div class="news-source" style="color:${sourceColor[item.source]}">${item.source}</div>
+      <div class="news-text">${escHtml(item.text)}</div>
+      <span class="news-sentiment ${sentClass}">${sentText}</span>
+    </div>`).join('');
+}
+
+// ── Live Feed ─────────────────────────────────────────────────────────────────
+function addToLiveFeed(data) {
+  const s = data.sentiment;
+  const color = s.score > 0.6 ? '#00ff88' : s.score < 0.4 ? '#ff3b5c' : '#ffb800';
+  const borderColor = s.score > 0.6 ? 'rgba(0,255,136,0.3)' : s.score < 0.4 ? 'rgba(255,59,92,0.3)' : 'rgba(255,184,0,0.3)';
+  const time = new Date(data.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  item.style.borderLeftColor = borderColor;
+  item.innerHTML = `
+    <div class="feed-ticker" style="color:${color}">${data.ticker} <span style="color:var(--text3);font-weight:400;">$${data.price.toFixed(2)}</span></div>
+    <div class="feed-summary">${escHtml(s.summary)}</div>
+    <div class="feed-meta">
+      <span class="feed-score" style="color:${color}">${s.score.toFixed(3)} · ${s.label}</span>
+      <span class="feed-time">${time}</span>
+    </div>`;
+
+  const feed = document.getElementById('liveFeed');
+  if (feed.firstChild && feed.firstChild.textContent?.includes('Waiting')) feed.innerHTML = '';
+  feed.insertBefore(item, feed.firstChild);
+
+  // Keep max 30 items
+  while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+// ── Topbar tickers ────────────────────────────────────────────────────────────
+function initTopbarTickers() {
+  document.getElementById('topbarTickers').innerHTML = TICKERS.map(t =>
+    `<div class="ticker-pill ${t===selectedTicker?'active':''}" data-ticker="${t}" onclick="selectTicker('${t}')">${t}</div>`
+  ).join('');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+initChart();
+initTopbarTickers();
+updateTickerList();
+updateHeatmap();
+connect();
+
+// Check health
+fetch(`${API}/api/health`).then(r => r.json()).then(d => {
+  console.log('StockIQ health:', d);
+}).catch(() => {
+  document.getElementById('liveLabel').textContent = 'BACKEND OFFLINE';
+  document.getElementById('liveLabel').style.color = '#ff3b5c';
+});
+</script>
+</body>
+</html>
